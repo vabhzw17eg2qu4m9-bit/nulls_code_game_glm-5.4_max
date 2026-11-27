@@ -96,7 +96,7 @@ package.json               The three commands; no dependencies
 .nojekyll                  An empty file. GitHub Pages then publishes the folder as it is; its default build leaves `vendor/` out
 GOAL.md                    The product specification
 README.md                  This file
-FEATURE_AUDIT.md           Every section of GOAL.md with its files, its checks and its status
+FEATURE_AUDIT.md           Every section of GOAL.md with its files, its checks and its status; every defect of the audit pass with its decision
 src/
   config.js                Every tunable: the step, ILO, dash, pulse, shield, damage, run and lift values
   input.js                 Keyboard and touch buttons; makes the plain input object the simulation reads
