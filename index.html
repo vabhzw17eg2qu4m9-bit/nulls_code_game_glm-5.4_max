@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>DEEPWAKE</title>
+  <link rel="stylesheet" href="src/style.css">
+  <script>
+    // A program file that is missing or fails to run leaves this message instead of a blank page (disabled JavaScript
+    // and a missing WebGL 2 have theirs). The listening ends once the page has loaded: a running game reports its own.
+    (function () {
+      function fail(event) {
+        // The script element that could not be fetched, or an exception while the program ran; a style sheet is neither.
+        if (event.target !== window && event.target.getAttribute('type') !== 'module') return;
+        var message = document.createElement('p');
+        message.className = 'fatal';
+        message.textContent = 'DEEPWAKE could not load its program files. Serve its folder with a local web server; README.md tells how.';
+        document.body.append(message);
+        window.removeEventListener('error', fail, true);
+      }
+      window.addEventListener('error', fail, true);
+      document.addEventListener('DOMContentLoaded', function () { window.removeEventListener('error', fail, true); });
+    })();
+  </script>
+</head>
+<body>
+  <canvas id="game" aria-label="DEEPWAKE game view"></canvas>
+  <div id="touch" role="group" aria-label="Touch controls"></div>
+  <div id="ui"></div>
+  <noscript><p class="fatal">DEEPWAKE needs JavaScript to run.</p></noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

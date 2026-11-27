@@ -1,0 +1,1033 @@
+/* DEEPWAKE interface: HUD, prompt, notifications, overlays, archive fragment and touch controls.
+   Layout uses fixed inset boxes, flex wrapping, clamp() sizes and dvh units only, so nothing overflows a viewport. */
+
+:root {
+  color-scheme: dark;
+  --fg: #f2ead9;                                /* warm off-white */
+  --fg-dim: rgba(242, 234, 217, 0.66);
+  --backing: rgba(12, 17, 24, 0.74);             /* restrained dark */
+  --backing-deep: rgba(9, 13, 19, 0.86);
+  --line: rgba(242, 234, 217, 0.18);
+  --line-strong: rgba(242, 234, 217, 0.46);
+  --amber: #f4b942;                             /* active power and new records */
+  --teal: #7fd8c9;                              /* safe stations */
+  --cyan: #8ae2ea;                              /* resonance */
+  --danger: #ff7a4a;                            /* hazards and warnings */
+  --ink: #1a1408;                               /* text on amber */
+  --font: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fs: clamp(12px, 1.9vmin, 14px);
+  --fs-min: 11px;                               /* no interface text is smaller, whatever its em value and the width */
+  --fs-lg: clamp(15px, 2.6vmin, 18px);
+  --fs-xl: clamp(28px, 8vmin, 60px);
+  --radius: 8px;
+  --card-width: 560px;
+  --touch-size: clamp(56px, 14vmin, 68px);
+  --touch-gap: 8px;
+  --touch-jump: calc(var(--touch-size) * 1.3);
+  --touch-move: calc(var(--touch-size) * 2 + var(--touch-gap));                       /* the move pad */
+  --touch-act: calc(var(--touch-size) * 3 + var(--touch-gap) * 2);                    /* the action cluster */
+  --touch-band: calc(var(--touch-jump) + var(--touch-size) + var(--touch-gap) + 8px); /* the strip they fill, its padding included */
+  --prompt-lift: 14px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none; /* a touch neither scrolls nor zooms the page */
+  background: #0b1118;
+  color: var(--fg);
+  font-family: var(--font);
+  -webkit-text-size-adjust: 100%;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: rgba(242, 234, 217, 0.08);
+  color: var(--fg);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* Hover only where a pointer really hovers: a tapped button on a touch screen would keep the style. */
+@media (hover: hover) {
+  button:not(:disabled):hover {
+    border-color: var(--fg);
+    background: rgba(242, 234, 217, 0.16);
+  }
+
+  button.primary:not(:disabled):hover {
+    border-color: #fff8e8;
+    background: #fff8e8;
+  }
+}
+
+/* An inert control is subdued and keeps its hover quiet: the HUD pause button during a recovery. */
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+button.primary {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+button.restart.confirm {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+kbd.keycap {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-width: 1.9em;
+  height: 1.9em;
+  padding: 0 0.45em;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: rgba(242, 234, 217, 0.1);
+  color: var(--fg);
+  font: inherit;
+  font-size: max(var(--fs-min), 0.92em);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* A card comes in without a fade: every frame of it is fully legible over the scene behind. */
+@keyframes settle {
+  from {
+    transform: translateY(4px);
+  }
+}
+
+/* --- HUD: a bar of three panels at the top edge; it wraps instead of overflowing --- */
+.hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 10px;
+  padding: calc(6px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) 0 calc(10px + env(safe-area-inset-left, 0px));
+  font-size: var(--fs);
+  line-height: 1.25;
+  pointer-events: none;
+}
+
+.hud-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--backing);
+}
+
+.hud-status {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* The run panel wraps before the buttons do, so pause and mute stay in the top right corner. */
+.hud-run {
+  order: 2;
+}
+
+/* The buttons take the top right corner on every row they land on. */
+.hud-buttons {
+  gap: 4px;
+  margin-left: auto;
+  pointer-events: auto;
+}
+
+/* Wide enough for one row: the panels read status, run, buttons. */
+@media (min-width: 880px) {
+  .hud-run {
+    order: 0;
+  }
+}
+
+.hud-row,
+.hud-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* The relay chips wrap under their label where the row would be wider than the screen, so the bar never leaves it. */
+.relays {
+  flex-wrap: wrap;
+}
+
+.hud-label {
+  min-width: 6.6em;
+  font-size: max(var(--fs-min), 0.85em);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.hud-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Integrity: a lost unit leaves a hollow dashed cell, not only a paler one. */
+.segment {
+  box-sizing: border-box;
+  width: clamp(14px, 2.4vmin, 20px);
+  height: 9px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: var(--fg);
+}
+
+.segment.off {
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+}
+
+.meter {
+  position: relative;
+  display: block;
+  flex: none;
+  width: clamp(84px, 14vw, 150px);
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(242, 234, 217, 0.14);
+}
+
+.meter-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--cyan);
+}
+
+/* One tick where the pulse (35) and one where the shield (50) become affordable; the positions come from config.js. */
+.meter-cost {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--fg);
+  opacity: 0.85;
+  transform: translateX(-50%);
+}
+
+.meter-value {
+  min-width: 2ch;
+  font-size: max(var(--fs-min), 0.9em);
+  text-align: right;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.resonance.low .meter-fill {
+  background: var(--danger);
+}
+
+/* A pulse without energy answers here; the outline is what stays when animation is off. */
+.resonance.flash .meter {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+  animation: meter-flash 0.4s ease-out;
+}
+
+@keyframes meter-flash {
+  from {
+    outline-color: var(--danger);
+  }
+
+  to {
+    outline-color: transparent;
+  }
+}
+
+/* Relays: online is a solid rounded amber chip, offline a dashed hollow one; the word says which. */
+.relay {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 4px;
+  color: var(--fg-dim);
+  font-size: max(var(--fs-min), 0.92em);
+  line-height: 1.3;
+}
+
+.relay-id {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.relay-state {
+  font-size: max(var(--fs-min), 0.82em);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.relay.active {
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  background: var(--amber);
+  color: var(--ink);
+}
+
+.relay.active .relay-id {
+  color: var(--ink);
+}
+
+/* Ability icons are subdued (hollow, faint) while the ability cannot be used. */
+.ability {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.ability.off {
+  border-style: dashed;
+  opacity: 0.38;
+}
+
+.ability-glyph {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.carry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 5px;
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  color: var(--amber);
+}
+
+/* A small power cell: an amber block with a handle and one charge band. */
+.cell-icon {
+  position: relative;
+  width: 10px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+
+.cell-icon::before,
+.cell-icon::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+
+.cell-icon::before {
+  top: -4px;
+  left: 2px;
+  right: 2px;
+  height: 2px;
+}
+
+.cell-icon::after {
+  top: 3px;
+  left: 1px;
+  right: 1px;
+  height: 3px;
+}
+
+.hud-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-color: var(--line);
+  background: transparent;
+}
+
+/* Pause: two bars. Sound: a speaker; a muted speaker gets a slash. */
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 22px;
+  height: 22px;
+}
+
+.icon-pause::before,
+.icon-pause::after {
+  content: "";
+  width: 4px;
+  height: 14px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.icon-sound::before {
+  content: "";
+  width: 18px;
+  height: 16px;
+  background: currentColor;
+  clip-path: polygon(0 36%, 28% 36%, 64% 4%, 64% 96%, 28% 64%, 0 64%);
+}
+
+.hud-button[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: rgba(242, 234, 217, 0.08);
+}
+
+.mute[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  width: 26px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--danger);
+  transform: rotate(-45deg);
+}
+
+/* --- Notifications: one line at a time, under the bar in the top middle --- */
+.toast {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+  pointer-events: none;
+}
+
+.toast-line {
+  max-width: 100%;
+  margin: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--backing);
+  text-align: center;
+  animation: rise 0.14s ease-out;
+}
+
+/* --- Prompt: a pill in a box; the box sits at the bottom center, lifted above the touch controls when they show --- */
+.prompt {
+  position: fixed;
+  right: env(safe-area-inset-right, 0px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--prompt-lift));
+  left: env(safe-area-inset-left, 0px);
+  display: flex;
+  justify-content: center;
+  width: max-content;
+  max-width: calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  margin: 0 auto;
+  font-size: var(--fs);
+}
+
+.prompt-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--backing);
+  white-space: nowrap;
+  animation: rise 0.14s ease-out;
+}
+
+.prompt-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-dash {
+  color: var(--fg-dim);
+}
+
+/* Text for assistive technology only. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- Overlays: full-screen layers; the card centers itself and scrolls inside when it is taller --- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--backing-deep);
+  pointer-events: auto;
+}
+
+/* The workshop behind the title and the dawn terrace behind the results stay visible. */
+.overlay[data-view="title"],
+.overlay[data-view="complete"] {
+  background: rgba(9, 13, 19, 0.55);
+}
+
+/* Recovery is a caption over the shutdown: it blocks nothing. */
+.overlay[data-view="recovery"] {
+  background: none;
+  pointer-events: none;
+}
+
+.card,
+.fragment {
+  box-sizing: border-box;
+  width: min(calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)), var(--card-width));
+  max-height: 100vh;
+  max-height: 100dvh;
+  margin: auto;
+  padding: calc(18px + env(safe-area-inset-top, 0px)) calc(18px + env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) calc(18px + env(safe-area-inset-left, 0px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--backing);
+  color: var(--fg);
+  font-size: var(--fs);
+  line-height: 1.4;
+  text-align: center;
+  animation: settle 0.2s ease-out;
+}
+
+.card h1,
+.card h2,
+.card h3,
+.card p,
+.card ul,
+.card dl {
+  margin: 0;
+}
+
+.card h1 {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+}
+
+.card h2 {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.card h3 {
+  font-size: max(var(--fs-min), 0.88em);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--fg-dim);
+}
+
+.card-kicker {
+  font-size: max(var(--fs-min), 0.85em);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.lede {
+  font-size: var(--fs-lg);
+}
+
+.records-line,
+.note {
+  font-size: max(var(--fs-min), 0.92em);
+  color: var(--fg-dim);
+}
+
+.card-title,
+.card-pause,
+.card-complete,
+.card-recovery {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.card-title {
+  background: rgba(12, 17, 24, 0.6);
+}
+
+/* Wide enough for a label beside its value; as solid as the pause card reads, while the terrace stays visible around it. */
+.card-complete {
+  --card-width: 680px;
+  background: var(--backing-deep);
+}
+
+.card-title .lede {
+  font-weight: 600;
+}
+
+.card-title .records-line {
+  font-size: max(var(--fs-min), 0.9em);
+}
+
+.card-recovery {
+  gap: 4px;
+  width: fit-content;
+  padding: 14px 22px;
+}
+
+.card-recovery .lede {
+  font-size: 1em;
+  color: var(--fg-dim);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Two blocks side by side while they fit, stacked otherwise; each shrinks instead of overflowing. */
+.card-body {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 14px 28px;
+  width: 100%;
+  text-align: left;
+}
+
+.card-block {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Archive panel of the pause menu */
+.archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.archive-entry strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--amber);
+}
+
+.archive-entry p {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.archive-entry.undiscovered strong,
+.archive-entry.undiscovered p {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+/* Controls list of the pause menu */
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+  list-style: none;
+}
+
+.controls li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.controls .keys {
+  display: flex;
+  gap: 3px;
+}
+
+.controls .keycap {
+  font-size: max(var(--fs-min), 0.82em);
+}
+
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+
+.setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.setting input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+
+/* Touch targets: with a coarse pointer the menu buttons and the rows of the pause toggles are at least 44 by 44 px. */
+@media (pointer: coarse) {
+  button,
+  .setting {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Results: two columns, label and value. A label wraps inside its cell; a value never wraps and carries the mark of
+   a record this expedition set beside it. */
+.stats,
+.records {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 4px 14px;
+  text-align: left;
+}
+
+.stats dt,
+.records dt {
+  color: var(--fg-dim);
+}
+
+.stats dd,
+.records dd {
+  margin: 0;
+  white-space: nowrap;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.new-best {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--amber);
+  color: var(--ink);
+  font-size: max(var(--fs-min), 0.78em);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* --- Archive fragment: a blocking card over a dimmed scene --- */
+.fragment-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(9, 13, 19, 0.8);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.fragment {
+  --card-width: 480px;
+  border-color: rgba(244, 185, 66, 0.55);
+  text-align: left;
+}
+
+.fragment:focus {
+  outline: none;
+}
+
+.fragment h2,
+.fragment p {
+  margin: 0;
+}
+
+.fragment h2 {
+  margin: 4px 0 8px;
+  font-size: var(--fs-lg);
+  line-height: 1.2;
+}
+
+.fragment-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.fragment p.fragment-dismiss {
+  margin-top: 12px;
+  font-size: max(var(--fs-min), 0.85em);
+  color: var(--fg-dim);
+}
+
+/* The message the glue leaves when the game has to stop: on top of everything, always readable. */
+.fatal {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  display: grid;
+  place-content: safe center;
+  margin: 0;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(calc(16px + env(safe-area-inset-right, 0px)), calc(50vw - 280px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(calc(16px + env(safe-area-inset-left, 0px)), calc(50vw - 280px));
+  overflow: auto;
+  background: var(--backing-deep);
+  font-size: var(--fs-lg);
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+}
+
+/* --- Touch controls: shown by html.is-touch, set for a coarse pointer or after the first touch --- */
+#touch {
+  position: fixed;
+  right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
+  left: env(safe-area-inset-left, 0px);
+  z-index: 1;
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--touch-gap);
+  padding: 0 8px 8px;
+  touch-action: none;
+  pointer-events: none;
+}
+
+html.is-touch #touch {
+  display: flex;
+}
+
+/* Covered by an overlay or a fragment (the class the interface sets), the controls are not displayed; they keep their
+   places, so nothing moves when the game shows again. */
+#touch.covered {
+  visibility: hidden;
+}
+
+html.is-touch {
+  --prompt-lift: calc(var(--touch-band) + 20px);
+}
+
+.touch-cluster {
+  display: flex;
+  flex: none;
+  gap: var(--touch-gap);
+  pointer-events: none;
+}
+
+/* Three buttons wide. Jump (first) and Dash share the bottom row, Pulse and Interact the row above. */
+.touch-act {
+  flex-flow: row-reverse wrap-reverse;
+  width: var(--touch-act);
+}
+
+#touch button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--touch-size);
+  height: var(--touch-size);
+  min-height: 0;
+  padding: 0;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--backing);
+  color: var(--fg);
+  font-size: max(12px, calc(var(--touch-size) * 0.2));
+  font-weight: 600;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: auto;
+}
+
+#touch button:active {
+  border-color: var(--fg);
+  background: rgba(242, 234, 217, 0.3);
+}
+
+#touch .touch-jump {
+  width: var(--touch-jump);
+  height: var(--touch-jump);
+}
+
+/* With touch controls the prompt lies in the free part of the touch band: it meets no button, and the camera keeps
+   ILO above the band. Roomy screens (a 640 x 360 screen at the smallest): centered in the free middle between the two
+   clusters. Narrow tall screens, where the cluster stacks: centered in the free corner of the band above the move
+   pad. Screens with neither keep the lift above the controls. The box is no control: a finger there reaches the
+   canvas. */
+.prompt.touch {
+  pointer-events: none;
+}
+
+@media (min-width: 640px) {
+  .prompt.touch {
+    right: calc(env(safe-area-inset-right, 0px) + 8px + var(--touch-act));
+    bottom: env(safe-area-inset-bottom, 0px);
+    left: calc(env(safe-area-inset-left, 0px) + 8px + var(--touch-move));
+    align-items: center;
+    width: auto;
+    height: var(--touch-band);
+    margin: 0;
+  }
+}
+
+/* Above the pad (its top) and left of the cluster's upper row (its left button and a gap). */
+@media (max-width: 639.98px) and (min-height: 480.02px) {
+  .prompt.touch {
+    right: calc(env(safe-area-inset-right, 0px) + 8px + var(--touch-size) * 2 + var(--touch-gap) * 2);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px + var(--touch-size));
+    left: calc(env(safe-area-inset-left, 0px) + 8px);
+    align-items: center;
+    width: auto;
+    height: calc(var(--touch-jump) + var(--touch-gap));
+    margin: 0;
+  }
+}
+
+/* Reduced motion: the class set by setReducedMotion and the system setting both stop every animation. */
+.reduced-motion * {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ui * {
+    animation: none !important;
+  }
+}
+
+/* Short landscape (640 x 360 class): the bar stays one row, the cards give more room, the buttons one row. */
+@media (max-height: 480px) {
+  .hud {
+    gap: 4px 8px;
+  }
+
+  .hud-panel {
+    padding: 3px 8px;
+  }
+
+  /* A timer reads as a timer. */
+  .hud-clock .hud-label {
+    display: none;
+  }
+
+  .card,
+  .fragment {
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* One row: the action cluster is as wide as its four buttons, the band as tall as the jump button. */
+  :root {
+    --touch-act: calc(var(--touch-jump) + var(--touch-size) * 3 + var(--touch-gap) * 3);
+    --touch-band: calc(var(--touch-jump) + 8px);
+  }
+
+  .touch-act {
+    flex-wrap: nowrap;
+  }
+}
+
+/* Short and touch: the buttons at the bottom right name the abilities, so the icons need no words.
+   The accessible names stay. */
+@media (max-height: 480px) and (pointer: coarse) {
+  .ability-name {
+    display: none;
+  }
+
+  .ability {
+    padding: 2px 6px;
+  }
+
+  /* The pause card keeps a margin around it, although its buttons and its rows are 44 px high. */
+  .card-pause {
+    gap: 8px;
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "deepwake",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DEEPWAKE: an atmospheric voxel platformer in a buried industrial sanctuary.",
+  "scripts": {
+    "start": "node server.mjs",
+    "check:browser": "node tools/browser-check.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}
